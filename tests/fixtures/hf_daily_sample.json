@@ -1,0 +1,22 @@
+[
+  {
+    "paper": {
+      "id": "2604.00001",
+      "title": "Sparse Autoencoders Find Interpretable Features",
+      "summary": "We train SAEs on transformer activations.",
+      "authors": [{"name": "Alice Author"}, {"name": "Bob Author"}],
+      "publishedAt": "2026-04-24T00:00:00.000Z",
+      "upvotes": 42
+    }
+  },
+  {
+    "paper": {
+      "id": "2604.00005",
+      "title": "No arxiv link paper",
+      "summary": "Summary.",
+      "authors": [{"name": "Solo"}],
+      "publishedAt": "2026-04-24T00:00:00.000Z",
+      "upvotes": 3
+    }
+  }
+]
