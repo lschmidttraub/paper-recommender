@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import json
 import sqlite3
+from collections.abc import Iterable
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
+
+from recommender.models import Paper
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS papers (
@@ -73,3 +77,46 @@ class Store:
     def init_db(self) -> None:
         with self.connect() as conn:
             conn.executescript(SCHEMA)
+
+    def upsert_papers(self, papers: Iterable[Paper]) -> int:
+        """Insert new papers; merge sources and hf_upvotes into existing rows.
+
+        Returns the number of newly-inserted papers.
+        """
+        inserted = 0
+        with self.connect() as conn:
+            for p in papers:
+                existing = conn.execute(
+                    "SELECT sources, hf_upvotes FROM papers WHERE arxiv_id = ?",
+                    (p.arxiv_id,),
+                ).fetchone()
+                if existing is None:
+                    conn.execute(
+                        """INSERT INTO papers
+                           (arxiv_id, title, abstract, authors, categories,
+                            url, published_at, sources, hf_upvotes, first_seen_at)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (
+                            p.arxiv_id,
+                            p.title,
+                            p.abstract,
+                            json.dumps(list(p.authors)),
+                            json.dumps(list(p.categories)),
+                            p.url,
+                            p.published_at.isoformat(),
+                            json.dumps(list(p.sources)),
+                            p.hf_upvotes,
+                            p.first_seen_at.isoformat(),
+                        ),
+                    )
+                    inserted += 1
+                else:
+                    merged_sources = sorted(
+                        set(json.loads(existing["sources"])) | set(p.sources)
+                    )
+                    merged_upvotes = p.hf_upvotes if p.hf_upvotes is not None else existing["hf_upvotes"]
+                    conn.execute(
+                        "UPDATE papers SET sources = ?, hf_upvotes = ? WHERE arxiv_id = ?",
+                        (json.dumps(merged_sources), merged_upvotes, p.arxiv_id),
+                    )
+        return inserted
