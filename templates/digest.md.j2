@@ -1,0 +1,45 @@
+# ML Papers Digest — {{ date }}
+
+*{{ on_interest|length }} on-interest · {{ surprise_count }} surprise · {{ total_seen }} papers seen · scored by `{{ scoring_model }}`*
+
+---
+
+## On interest
+
+{% for item in on_interest %}
+### {{ loop.index }}. {{ item.paper.title }} · score {{ '%.1f' % item.score }}
+**{{ item.paper.authors|join(", ") }}** · {{ item.paper.categories|join(", ") }} · [arxiv:{{ item.paper.arxiv_id }}]({{ item.paper.url }}){% if item.paper.hf_upvotes %} · HF ↑{{ item.paper.hf_upvotes }}{% endif %}
+
+> {{ item.paper.abstract|truncate(600) }}
+
+*Why {{ '%.1f' % item.score }}:* {{ item.why }}
+*(relevance {{ item.breakdown.relevance }} · quality {{ item.breakdown.quality }} · field-importance {{ item.breakdown.field_importance }})*
+
+---
+{% endfor %}
+
+{% if hot_outside is not none %}
+## Surprise — hot outside your field
+### {{ hot_outside.paper.title }} · HF ↑{{ hot_outside.paper.hf_upvotes }}
+**{{ hot_outside.paper.authors|join(", ") }}** · [arxiv:{{ hot_outside.paper.arxiv_id }}]({{ hot_outside.paper.url }})
+
+> {{ hot_outside.paper.abstract|truncate(600) }}
+
+*Trending on HF despite scoring {{ '%.1f' % hot_outside.score }} against your interests.*
+
+---
+{% endif %}
+
+{% if bridging is not none %}
+## Surprise — bridging pick
+### {{ bridging.paper.title }}
+**{{ bridging.paper.authors|join(", ") }}** · {{ bridging.paper.categories|join(", ") }} · [arxiv:{{ bridging.paper.arxiv_id }}]({{ bridging.paper.url }})
+
+> {{ bridging.paper.abstract|truncate(600) }}
+
+**Connection:** {{ bridging.bridge_reason }}
+
+---
+{% endif %}
+
+*Run: {{ run_duration_s }}s · {% if errors %}errors: {{ errors }}{% else %}no errors{% endif %}*
