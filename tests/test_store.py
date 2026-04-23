@@ -77,7 +77,7 @@ def test_upsert_merges_hf_signal_into_existing_row(store: Store):
 
 import json as _json
 
-from recommender.models import Score
+from recommender.models import DigestEntry, Score
 
 
 def test_start_run_returns_new_run_id(store: Store):
@@ -138,3 +138,59 @@ def test_record_run_finalizes_status(store: Store):
     assert row["status"] == "ok"
     assert row["finished_at"] is not None
     assert row["papers_seen"] == 3
+
+
+def test_top_scoring_respects_threshold_and_bounds(store: Store):
+    store.init_db()
+    store.upsert_papers([_paper(f"2604.{i:05d}") for i in range(1, 11)])
+    run_id = store.start_run()
+    scores = []
+    for i in range(1, 11):
+        scores.append(
+            Score(
+                arxiv_id=f"2604.{i:05d}",
+                run_id=run_id,
+                model="m",
+                score=float(i),  # 1..10
+                breakdown={"relevance": i, "quality": i, "field_importance": i},
+                why="",
+                scored_at=datetime(2026, 4, 24, tzinfo=timezone.utc),
+            )
+        )
+    store.save_scores(scores)
+    picks = store.top_scoring_today(run_id, threshold=7.0, min_count=5, max_count=15)
+    # papers with score >= 7 are ids 7..10 (4 papers), floor of 5 forces including id 6 as well
+    assert [p.arxiv_id for p in picks] == [
+        "2604.00010", "2604.00009", "2604.00008", "2604.00007", "2604.00006",
+    ]
+
+
+def test_top_scoring_excludes_already_digested(store: Store):
+    store.init_db()
+    store.upsert_papers([_paper(f"2604.{i:05d}") for i in range(1, 4)])
+    run_id = store.start_run()
+    store.save_scores([
+        Score(
+            arxiv_id=f"2604.{i:05d}",
+            run_id=run_id, model="m", score=9.0,
+            breakdown={"relevance": 9, "quality": 9, "field_importance": 9},
+            why="", scored_at=datetime(2026, 4, 24, tzinfo=timezone.utc),
+        )
+        for i in range(1, 4)
+    ])
+    store.mark_sent([
+        DigestEntry(digest_date="2026-04-23", arxiv_id="2604.00001",
+                    section="on_interest", rank=1),
+    ])
+    picks = store.top_scoring_today(run_id, threshold=7.0, min_count=1, max_count=10)
+    ids = [p.arxiv_id for p in picks]
+    assert "2604.00001" not in ids
+    assert {"2604.00002", "2604.00003"} <= set(ids)
+
+
+def test_mark_sent_idempotent_for_same_day(store: Store):
+    store.init_db()
+    store.upsert_papers([_paper("2604.00001")])
+    e = DigestEntry("2026-04-24", "2604.00001", "on_interest", 1)
+    store.mark_sent([e])
+    store.mark_sent([e])  # INSERT OR REPLACE, must not error

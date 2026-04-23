@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
-from recommender.models import Paper, Score
+from recommender.models import DigestEntry, Paper, Score
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS papers (
@@ -180,6 +180,51 @@ class Store:
                 (run_id,),
             ).fetchall()
         return [self._row_to_paper(r) for r in rows]
+
+    def top_scoring_today(
+        self,
+        run_id: int,
+        *,
+        threshold: float,
+        min_count: int,
+        max_count: int,
+    ) -> list[Paper]:
+        """Return up to max_count papers for the digest, ordered by score desc.
+
+        Includes papers with score >= threshold. If fewer than min_count qualify,
+        fills up to min_count with the next-highest scoring papers. Always
+        excludes papers that already appear in any past digest_entries row.
+        """
+        with self.connect() as conn:
+            rows = conn.execute(
+                """SELECT p.*, s.score
+                   FROM papers p
+                   JOIN scores s ON s.arxiv_id = p.arxiv_id
+                   WHERE s.run_id = ?
+                     AND NOT EXISTS (
+                       SELECT 1 FROM digest_entries d WHERE d.arxiv_id = p.arxiv_id
+                     )
+                   ORDER BY s.score DESC""",
+                (run_id,),
+            ).fetchall()
+
+        ranked = [(r, r["score"]) for r in rows]
+        above = [r for r, sc in ranked if sc >= threshold]
+        if len(above) >= min_count:
+            picked = above[:max_count]
+        else:
+            picked = [r for r, _ in ranked[:min_count]]
+        return [self._row_to_paper(r) for r in picked]
+
+    def mark_sent(self, entries: Iterable[DigestEntry]) -> None:
+        with self.connect() as conn:
+            for e in entries:
+                conn.execute(
+                    """INSERT OR REPLACE INTO digest_entries
+                       (digest_date, arxiv_id, section, rank)
+                       VALUES (?, ?, ?, ?)""",
+                    (e.digest_date, e.arxiv_id, e.section, e.rank),
+                )
 
     @staticmethod
     def _row_to_paper(row: sqlite3.Row) -> Paper:
