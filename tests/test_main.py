@@ -88,3 +88,20 @@ def test_run_pipeline_dry_run_does_not_send_email(settings, mocker):
     with store.connect() as conn:
         count = conn.execute("SELECT COUNT(*) FROM digest_entries").fetchone()[0]
     assert count == 0
+
+
+def test_cli_parses_force_date_and_dry_run(mocker, tmp_path, monkeypatch):
+    monkeypatch.setenv("EMAIL_TO", "to@example.com")
+    monkeypatch.setenv("EMAIL_FROM", "from@example.com")
+    monkeypatch.setenv("GMAIL_APP_PASSWORD", "pw")
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "MEMORY.md").write_text("x")
+
+    run_mock = mocker.patch("recommender.__main__.run_pipeline")
+    from recommender.__main__ import main as cli_main
+    cli_main(["--dry-run", "--force-date", "2026-04-24"])
+
+    run_mock.assert_called_once()
+    _args, kwargs = run_mock.call_args
+    assert kwargs["dry_run"] is True
+    assert kwargs["force_date"] == "2026-04-24"
