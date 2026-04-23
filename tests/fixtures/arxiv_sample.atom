@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>http://arxiv.org/abs/2604.00001v1</id>
+    <title>Sparse Autoencoders Find Interpretable Features</title>
+    <summary>We train sparse autoencoders on transformer activations.</summary>
+    <published>2026-04-24T00:00:00Z</published>
+    <author><name>Alice Author</name></author>
+    <author><name>Bob Author</name></author>
+    <link rel="alternate" href="http://arxiv.org/abs/2604.00001v1"/>
+    <category term="cs.LG"/>
+    <category term="cs.AI"/>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2604.00002v2</id>
+    <title>Scaling Laws Revisited</title>
+    <summary>We revisit scaling laws under new conditions.</summary>
+    <published>2026-04-24T00:00:00Z</published>
+    <author><name>Carol Author</name></author>
+    <link rel="alternate" href="http://arxiv.org/abs/2604.00002v2"/>
+    <category term="stat.ML"/>
+  </entry>
+</feed>
