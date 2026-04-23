@@ -4,10 +4,11 @@ import json
 import sqlite3
 from collections.abc import Iterable
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
-from recommender.models import Paper
+from recommender.models import Paper, Score
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS papers (
@@ -120,3 +121,77 @@ class Store:
                         (json.dumps(merged_sources), merged_upvotes, p.arxiv_id),
                     )
         return inserted
+
+    def start_run(self) -> int:
+        with self.connect() as conn:
+            cur = conn.execute(
+                "INSERT INTO runs (started_at, status) VALUES (?, 'running')",
+                (datetime.now(timezone.utc).isoformat(),),
+            )
+            return int(cur.lastrowid)
+
+    def record_run(
+        self,
+        run_id: int,
+        *,
+        status: str,
+        papers_seen: int | None = None,
+        papers_scored: int | None = None,
+        digest_date: str | None = None,
+        error: str | None = None,
+    ) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """UPDATE runs
+                   SET finished_at = ?, status = ?, papers_seen = ?,
+                       papers_scored = ?, digest_date = ?, error = ?
+                   WHERE run_id = ?""",
+                (
+                    datetime.now(timezone.utc).isoformat(),
+                    status,
+                    papers_seen,
+                    papers_scored,
+                    digest_date,
+                    error,
+                    run_id,
+                ),
+            )
+
+    def save_scores(self, scores: Iterable[Score]) -> None:
+        with self.connect() as conn:
+            for s in scores:
+                payload = json.dumps({"why": s.why, "breakdown": s.breakdown})
+                conn.execute(
+                    """INSERT OR REPLACE INTO scores
+                       (arxiv_id, run_id, model, score, justification, scored_at)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (s.arxiv_id, s.run_id, s.model, s.score, payload, s.scored_at.isoformat()),
+                )
+
+    def papers_needing_scoring(self, run_id: int) -> list[Paper]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """SELECT p.* FROM papers p
+                   WHERE NOT EXISTS (
+                     SELECT 1 FROM scores s
+                     WHERE s.arxiv_id = p.arxiv_id AND s.run_id = ?
+                   )
+                   ORDER BY p.first_seen_at DESC""",
+                (run_id,),
+            ).fetchall()
+        return [self._row_to_paper(r) for r in rows]
+
+    @staticmethod
+    def _row_to_paper(row: sqlite3.Row) -> Paper:
+        return Paper(
+            arxiv_id=row["arxiv_id"],
+            title=row["title"],
+            abstract=row["abstract"],
+            authors=tuple(json.loads(row["authors"])),
+            categories=tuple(json.loads(row["categories"])),
+            url=row["url"],
+            published_at=datetime.fromisoformat(row["published_at"]),
+            sources=tuple(json.loads(row["sources"])),
+            hf_upvotes=row["hf_upvotes"],
+            first_seen_at=datetime.fromisoformat(row["first_seen_at"]),
+        )
