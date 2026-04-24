@@ -11,7 +11,7 @@ from recommender.models import Paper
 
 log = logging.getLogger(__name__)
 
-_ARXIV_API = "http://export.arxiv.org/api/query"
+_ARXIV_API = "https://export.arxiv.org/api/query"
 _VERSION_SUFFIX = re.compile(r"v\d+$")
 _ID_FROM_URL = re.compile(r"arxiv\.org/abs/([^/]+?)(?:v\d+)?$")
 
