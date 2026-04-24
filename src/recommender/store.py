@@ -219,6 +219,62 @@ class Store:
             picked = [r for r, _ in ranked[:min_count]]
         return [self._row_to_paper(r) for r in picked]
 
+    def last_successful_finished_at(self) -> datetime | None:
+        """Return the finished_at of the most recent successful run, or None."""
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT MAX(finished_at) AS last FROM runs WHERE status='ok'"
+            ).fetchone()
+        raw = row["last"] if row else None
+        return datetime.fromisoformat(raw) if raw else None
+
+    def score_and_justification(
+        self, arxiv_id: str, run_id: int
+    ) -> tuple[float, dict] | None:
+        """Return (score, justification_payload) for a paper in a run, or None."""
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT score, justification FROM scores WHERE arxiv_id = ? AND run_id = ?",
+                (arxiv_id, run_id),
+            ).fetchone()
+        if row is None:
+            return None
+        return row["score"], json.loads(row["justification"])
+
+    def hot_outside_field_pick(
+        self, *, run_id: int, upvote_threshold: int
+    ) -> Paper | None:
+        """Highest-upvoted HF paper from this run that scored <5 and is not yet digested."""
+        with self.connect() as conn:
+            row = conn.execute(
+                """SELECT p.*
+                   FROM papers p
+                   JOIN scores s ON s.arxiv_id = p.arxiv_id
+                   WHERE s.run_id = ?
+                     AND p.hf_upvotes IS NOT NULL
+                     AND p.hf_upvotes >= ?
+                     AND s.score < 5
+                     AND EXISTS (SELECT 1 FROM json_each(p.sources) WHERE value = 'hf')
+                     AND NOT EXISTS (SELECT 1 FROM digest_entries d WHERE d.arxiv_id = p.arxiv_id)
+                   ORDER BY p.hf_upvotes DESC
+                   LIMIT 1""",
+                (run_id, upvote_threshold),
+            ).fetchone()
+        return self._row_to_paper(row) if row else None
+
+    def bridging_candidates(self, run_id: int) -> list[Paper]:
+        """Papers scored in [3, 6] that are not yet digested."""
+        with self.connect() as conn:
+            rows = conn.execute(
+                """SELECT p.* FROM papers p
+                   JOIN scores s ON s.arxiv_id = p.arxiv_id
+                   WHERE s.run_id = ?
+                     AND s.score >= 3 AND s.score <= 6
+                     AND NOT EXISTS (SELECT 1 FROM digest_entries d WHERE d.arxiv_id = p.arxiv_id)""",
+                (run_id,),
+            ).fetchall()
+        return [self._row_to_paper(r) for r in rows]
+
     def mark_sent(self, entries: Iterable[DigestEntry]) -> None:
         with self.connect() as conn:
             for e in entries:

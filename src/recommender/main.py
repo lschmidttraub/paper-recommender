@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 import time
 import traceback
@@ -17,15 +16,11 @@ log = logging.getLogger(__name__)
 
 
 def _since(store: Store, max_backfill_days: int) -> datetime:
-    with store.connect() as conn:
-        row = conn.execute(
-            "SELECT MAX(finished_at) FROM runs WHERE status='ok'"
-        ).fetchone()
+    last = store.last_successful_finished_at()
     earliest = datetime.now(timezone.utc) - timedelta(days=max_backfill_days)
-    if row and row[0]:
-        last = datetime.fromisoformat(row[0])
-        return max(last, earliest)
-    return earliest
+    if last is None:
+        return earliest
+    return max(last, earliest)
 
 
 def run_pipeline(
@@ -149,24 +144,20 @@ def run_pipeline(
 
 
 def _on_interest_item(store: Store, paper, run_id: int) -> OnInterestItem:
-    with store.connect() as conn:
-        row = conn.execute(
-            "SELECT score, justification FROM scores WHERE arxiv_id = ? AND run_id = ?",
-            (paper.arxiv_id, run_id),
-        ).fetchone()
-    payload = json.loads(row["justification"])
+    result = store.score_and_justification(paper.arxiv_id, run_id)
+    if result is None:
+        return OnInterestItem(paper=paper, score=0.0, why="",
+                              breakdown={"relevance": 0, "quality": 0, "field_importance": 0})
+    score, payload = result
     return OnInterestItem(
         paper=paper,
-        score=row["score"],
+        score=score,
         why=payload.get("why", ""),
         breakdown=payload.get("breakdown", {"relevance": 0, "quality": 0, "field_importance": 0}),
     )
 
 
 def _hot_item(store: Store, paper, run_id: int) -> HotOutsideItem:
-    with store.connect() as conn:
-        row = conn.execute(
-            "SELECT score FROM scores WHERE arxiv_id = ? AND run_id = ?",
-            (paper.arxiv_id, run_id),
-        ).fetchone()
-    return HotOutsideItem(paper=paper, score=row["score"])
+    result = store.score_and_justification(paper.arxiv_id, run_id)
+    score = result[0] if result else 0.0
+    return HotOutsideItem(paper=paper, score=score)

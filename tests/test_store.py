@@ -196,3 +196,85 @@ def test_mark_sent_idempotent_for_same_day(store: Store):
     e = DigestEntry("2026-04-24", "2604.00001", "on_interest", 1)
     store.mark_sent([e])
     store.mark_sent([e])  # INSERT OR REPLACE, must not error
+
+
+def test_last_successful_finished_at_returns_none_when_no_ok_runs(store: Store):
+    store.init_db()
+    assert store.last_successful_finished_at() is None
+    rid = store.start_run()
+    store.record_run(rid, status="error")
+    assert store.last_successful_finished_at() is None
+
+
+def test_last_successful_finished_at_returns_latest_ok_run(store: Store):
+    store.init_db()
+    r1 = store.start_run()
+    store.record_run(r1, status="ok")
+    got = store.last_successful_finished_at()
+    assert got is not None
+    assert got.tzinfo is not None
+
+
+def test_score_and_justification_roundtrip(store: Store):
+    store.init_db()
+    store.upsert_papers([_paper("2604.00001")])
+    rid = store.start_run()
+    store.save_scores([
+        Score(
+            arxiv_id="2604.00001", run_id=rid, model="m", score=7.5,
+            breakdown={"relevance": 7, "quality": 8, "field_importance": 7},
+            why="neat", scored_at=datetime(2026, 4, 24, tzinfo=timezone.utc),
+        ),
+    ])
+    got = store.score_and_justification("2604.00001", rid)
+    assert got is not None
+    score, payload = got
+    assert score == 7.5
+    assert payload["breakdown"]["quality"] == 8
+    assert payload["why"] == "neat"
+
+
+def test_score_and_justification_returns_none_for_missing(store: Store):
+    store.init_db()
+    assert store.score_and_justification("nope", 1) is None
+
+
+def test_hot_outside_field_pick_respects_filters(store: Store):
+    store.init_db()
+    store.upsert_papers([
+        _paper("2604.00001", sources=("arxiv", "hf"), hf_upvotes=50),
+        _paper("2604.00002", sources=("arxiv",)),  # not on HF
+    ])
+    rid = store.start_run()
+    store.save_scores([
+        Score(arxiv_id="2604.00001", run_id=rid, model="m", score=3.0,
+              breakdown={"relevance": 0, "quality": 0, "field_importance": 0},
+              why="", scored_at=datetime(2026, 4, 24, tzinfo=timezone.utc)),
+        Score(arxiv_id="2604.00002", run_id=rid, model="m", score=3.0,
+              breakdown={"relevance": 0, "quality": 0, "field_importance": 0},
+              why="", scored_at=datetime(2026, 4, 24, tzinfo=timezone.utc)),
+    ])
+    pick = store.hot_outside_field_pick(run_id=rid, upvote_threshold=10)
+    assert pick is not None and pick.arxiv_id == "2604.00001"
+
+
+def test_bridging_candidates_returns_papers_in_score_band(store: Store):
+    store.init_db()
+    store.upsert_papers([_paper(f"2604.{i:05d}") for i in range(1, 5)])
+    rid = store.start_run()
+    store.save_scores([
+        Score(arxiv_id="2604.00001", run_id=rid, model="m", score=2.0,
+              breakdown={"relevance": 0, "quality": 0, "field_importance": 0},
+              why="", scored_at=datetime(2026, 4, 24, tzinfo=timezone.utc)),
+        Score(arxiv_id="2604.00002", run_id=rid, model="m", score=4.5,
+              breakdown={"relevance": 0, "quality": 0, "field_importance": 0},
+              why="", scored_at=datetime(2026, 4, 24, tzinfo=timezone.utc)),
+        Score(arxiv_id="2604.00003", run_id=rid, model="m", score=6.0,
+              breakdown={"relevance": 0, "quality": 0, "field_importance": 0},
+              why="", scored_at=datetime(2026, 4, 24, tzinfo=timezone.utc)),
+        Score(arxiv_id="2604.00004", run_id=rid, model="m", score=8.0,
+              breakdown={"relevance": 0, "quality": 0, "field_importance": 0},
+              why="", scored_at=datetime(2026, 4, 24, tzinfo=timezone.utc)),
+    ])
+    ids = [p.arxiv_id for p in store.bridging_candidates(rid)]
+    assert set(ids) == {"2604.00002", "2604.00003"}
