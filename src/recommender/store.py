@@ -168,16 +168,19 @@ class Store:
                     (s.arxiv_id, s.run_id, s.model, s.score, payload, s.scored_at.isoformat()),
                 )
 
-    def papers_needing_scoring(self, run_id: int) -> list[Paper]:
+    def papers_without_scores(self) -> list[Paper]:
+        """Return papers that have never been scored.
+
+        A paper with a score row from any prior run is considered scored;
+        failed-batch retry works because failed batches never write a row.
+        """
         with self.connect() as conn:
             rows = conn.execute(
                 """SELECT p.* FROM papers p
                    WHERE NOT EXISTS (
-                     SELECT 1 FROM scores s
-                     WHERE s.arxiv_id = p.arxiv_id AND s.run_id = ?
+                     SELECT 1 FROM scores s WHERE s.arxiv_id = p.arxiv_id
                    )
-                   ORDER BY p.first_seen_at DESC""",
-                (run_id,),
+                   ORDER BY p.first_seen_at DESC"""
             ).fetchall()
         return [self._row_to_paper(r) for r in rows]
 

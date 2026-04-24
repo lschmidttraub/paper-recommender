@@ -59,7 +59,7 @@ def run_pipeline(
 
         all_papers = arxiv_papers + hf_papers
         store.upsert_papers(all_papers)
-        needing = store.papers_needing_scoring(run_id)
+        needing = store.papers_without_scores()
 
         primary, secondary = interests.load(
             memory_md=settings.memory_md,

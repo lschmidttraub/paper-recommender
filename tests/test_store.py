@@ -110,14 +110,14 @@ def test_save_scores_persists_rows(store: Store):
     assert saved["why"] == "because"
 
 
-def test_papers_needing_scoring_excludes_already_scored_this_run(store: Store):
+def test_papers_without_scores_excludes_any_prior_score(store: Store):
     store.init_db()
     store.upsert_papers([_paper("2604.00001"), _paper("2604.00002")])
-    run_id = store.start_run()
+    run_id_1 = store.start_run()
     store.save_scores([
         Score(
             arxiv_id="2604.00001",
-            run_id=run_id,
+            run_id=run_id_1,
             model="m",
             score=5.0,
             breakdown={"relevance": 5, "quality": 5, "field_importance": 5},
@@ -125,7 +125,9 @@ def test_papers_needing_scoring_excludes_already_scored_this_run(store: Store):
             scored_at=datetime(2026, 4, 24, tzinfo=timezone.utc),
         )
     ])
-    needing = store.papers_needing_scoring(run_id)
+    # Even on a fresh run, 00001 should not re-appear (it was scored in run 1).
+    _run_id_2 = store.start_run()
+    needing = store.papers_without_scores()
     assert [p.arxiv_id for p in needing] == ["2604.00002"]
 
 
