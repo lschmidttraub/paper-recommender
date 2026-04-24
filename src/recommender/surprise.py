@@ -65,6 +65,7 @@ def pick_bridging(
                 {"role": "system", "content": "Return only JSON."},
                 {"role": "user", "content": user_msg},
             ],
+            max_tokens=1500,
         )
     except Exception as e:
         log.warning("Bridging LLM call failed: %s", e)
