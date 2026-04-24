@@ -29,10 +29,27 @@ def run_pipeline(
     force_date: str | None = None,
     dry_run: bool = False,
     no_email: bool = False,
+    email_only: bool = False,
     backfill_days: int | None = None,
 ) -> None:
     settings.digests_dir.mkdir(parents=True, exist_ok=True)
     settings.logs_dir.mkdir(parents=True, exist_ok=True)
+
+    if email_only:
+        date = force_date or datetime.now(timezone.utc).date().isoformat()
+        digest_path = settings.digests_dir / f"{date}.md"
+        if not digest_path.exists():
+            raise FileNotFoundError(f"No digest at {digest_path} — cannot --email-only")
+        md = digest_path.read_text()
+        subj = f"ML digest — {date} (resend)"
+        mail.send(
+            subject=subj,
+            markdown_body=md,
+            to_addr=settings.email_to,
+            from_addr=settings.email_from,
+            smtp_password=settings.smtp_password,
+        )
+        return
 
     store = Store(settings.db_path)
     store.init_db()

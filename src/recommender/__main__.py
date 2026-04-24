@@ -16,6 +16,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--backfill", type=int, default=None, help="Look back N days instead of since-last-run")
     parser.add_argument("--force-date", type=str, default=None, help="Regenerate the digest for YYYY-MM-DD")
     parser.add_argument("--log-level", default="INFO", help="Logging level")
+    parser.add_argument("--email-only", action="store_true",
+                        help="Send existing digest by email without scraping/scoring (requires --force-date or defaults to today)")
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -28,6 +30,7 @@ def main(argv: list[str] | None = None) -> int:
         force_date=args.force_date,
         dry_run=args.dry_run,
         no_email=args.no_email,
+        email_only=args.email_only,
         backfill_days=args.backfill,
     )
     return 0

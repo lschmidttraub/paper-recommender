@@ -105,3 +105,44 @@ def test_cli_parses_force_date_and_dry_run(mocker, tmp_path, monkeypatch):
     _args, kwargs = run_mock.call_args
     assert kwargs["dry_run"] is True
     assert kwargs["force_date"] == "2026-04-24"
+
+
+def test_email_only_sends_existing_digest_without_pipeline(settings, mocker):
+    date = "2026-04-24"
+    settings.digests_dir.mkdir(parents=True, exist_ok=True)
+    (settings.digests_dir / f"{date}.md").write_text("# Existing digest\n")
+
+    arxiv_mock = mocker.patch("recommender.main.arxiv.fetch")
+    mail_mock = mocker.patch("recommender.main.mail.send")
+
+    run_pipeline(settings, force_date=date, email_only=True)
+
+    arxiv_mock.assert_not_called()
+    mail_mock.assert_called_once()
+    _args, kwargs = mail_mock.call_args
+    assert "Existing digest" in kwargs["markdown_body"]
+    assert "(resend)" in kwargs["subject"]
+
+
+def test_email_only_raises_if_digest_missing(settings, mocker):
+    mocker.patch("recommender.main.arxiv.fetch")
+    mocker.patch("recommender.main.mail.send")
+    import pytest as _pytest
+    with _pytest.raises(FileNotFoundError):
+        run_pipeline(settings, force_date="2099-01-01", email_only=True)
+
+
+def test_cli_parses_email_only_flag(mocker, tmp_path, monkeypatch):
+    monkeypatch.setenv("EMAIL_TO", "to@example.com")
+    monkeypatch.setenv("EMAIL_FROM", "from@example.com")
+    monkeypatch.setenv("GMAIL_APP_PASSWORD", "pw")
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "MEMORY.md").write_text("x")
+
+    run_mock = mocker.patch("recommender.__main__.run_pipeline")
+    from recommender.__main__ import main as cli_main
+    cli_main(["--email-only", "--force-date", "2026-04-24"])
+
+    run_mock.assert_called_once()
+    _args, kwargs = run_mock.call_args
+    assert kwargs["email_only"] is True
