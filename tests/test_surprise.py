@@ -52,14 +52,14 @@ def populated_store(tmp_path):
 
 def test_pick_hot_outside_field_returns_top_upvoted_low_score(populated_store):
     store, run_id = populated_store
-    pick = pick_hot_outside_field(store, upvote_threshold=10)
+    pick = pick_hot_outside_field(store, upvote_threshold=10, score_max=5.0)
     assert pick is not None
     assert pick.arxiv_id == "2604.00001"
 
 
 def test_pick_hot_outside_field_returns_none_when_no_candidates(populated_store):
     store, run_id = populated_store
-    pick = pick_hot_outside_field(store, upvote_threshold=1000)
+    pick = pick_hot_outside_field(store, upvote_threshold=1000, score_max=5.0)
     assert pick is None
 
 
@@ -69,7 +69,8 @@ def test_pick_bridging_returns_none_when_too_few_candidates(populated_store, moc
     # Only 2 papers in 3-6 band (0001 at 3.0, 0002 at 4.5); below min_candidates default 10.
     pick = pick_bridging(
         store, primary="interests",
-        model="anthropic/claude-haiku-4-5", min_candidates=10,
+        model="anthropic/claude-haiku-4-5",
+        score_min=3.0, score_max=6.0, min_candidates=10,
     )
     assert pick is None
     mock.assert_not_called()
@@ -86,7 +87,8 @@ def test_pick_bridging_calls_llm_and_returns_chosen(populated_store, mocker):
     mock.return_value = {"id": "2604.00010", "bridge_reason": "methodological parallel"}
     pick = pick_bridging(
         store, primary="interests",
-        model="anthropic/claude-haiku-4-5", min_candidates=10,
+        model="anthropic/claude-haiku-4-5",
+        score_min=3.0, score_max=6.0, min_candidates=10,
     )
     assert pick is not None
     paper, reason = pick

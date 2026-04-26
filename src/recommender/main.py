@@ -110,11 +110,14 @@ def run_pipeline(
         hot = surprise.pick_hot_outside_field(
             store,
             upvote_threshold=settings.hf_upvote_threshold_for_hot_surprise,
+            score_max=settings.hot_surprise_score_max,
         )
         hot_item = _hot_item(store, hot, run_id) if hot else None
         bridging_pair = surprise.pick_bridging(
             store, primary=primary,
             model=settings.bridging_model,
+            score_min=settings.bridging_score_min,
+            score_max=settings.bridging_score_max,
         )
         bridging_item = (
             BridgingItem(paper=bridging_pair[0], bridge_reason=bridging_pair[1])

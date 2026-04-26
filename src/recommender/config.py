@@ -39,6 +39,9 @@ class Settings:
     on_interest_max: int
     on_interest_threshold: float
     hf_upvote_threshold_for_hot_surprise: int
+    hot_surprise_score_max: float
+    bridging_score_min: float
+    bridging_score_max: float
 
     email_to: str
     email_from: str
@@ -70,6 +73,9 @@ class Settings:
             on_interest_max=_int("ON_INTEREST_MAX", 15),
             on_interest_threshold=_float("ON_INTEREST_THRESHOLD", 7.0),
             hf_upvote_threshold_for_hot_surprise=_int("HF_UPVOTE_THRESHOLD", 10),
+            hot_surprise_score_max=_float("HOT_SURPRISE_SCORE_MAX", 5.0),
+            bridging_score_min=_float("BRIDGING_SCORE_MIN", 3.0),
+            bridging_score_max=_float("BRIDGING_SCORE_MAX", 6.0),
             email_to=_require("EMAIL_TO"),
             email_from=_require("EMAIL_FROM"),
             smtp_password=_require("GMAIL_APP_PASSWORD"),

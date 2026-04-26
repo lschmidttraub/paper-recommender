@@ -15,9 +15,10 @@ def pick_hot_outside_field(
     store: Store,
     *,
     upvote_threshold: int,
+    score_max: float,
 ) -> Paper | None:
-    """Highest-upvoted HF paper whose latest score is <5 and is not yet digested."""
-    return store.hot_outside_field_pick(upvote_threshold=upvote_threshold)
+    """Highest-upvoted HF paper whose latest score is below score_max and not yet digested."""
+    return store.hot_outside_field_pick(upvote_threshold=upvote_threshold, score_max=score_max)
 
 
 def pick_bridging(
@@ -25,11 +26,13 @@ def pick_bridging(
     *,
     primary: str,
     model: str,
+    score_min: float,
+    score_max: float,
     min_candidates: int = 10,
     sample_size: int = 30,
 ) -> tuple[Paper, str] | None:
     """LLM-picked tangential paper with a bridging reason."""
-    candidates = store.bridging_candidates()
+    candidates = store.bridging_candidates(score_min=score_min, score_max=score_max)
     if len(candidates) < min_candidates:
         log.info("Bridging skipped: %d candidates < %d", len(candidates), min_candidates)
         return None

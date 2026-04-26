@@ -254,7 +254,7 @@ def test_hot_outside_field_pick_respects_filters(store: Store):
               breakdown={"relevance": 0, "quality": 0, "field_importance": 0},
               why="", scored_at=datetime(2026, 4, 24, tzinfo=timezone.utc)),
     ])
-    pick = store.hot_outside_field_pick(upvote_threshold=10)
+    pick = store.hot_outside_field_pick(upvote_threshold=10, score_max=5.0)
     assert pick is not None and pick.arxiv_id == "2604.00001"
 
 
@@ -276,7 +276,7 @@ def test_bridging_candidates_returns_papers_in_score_band(store: Store):
               breakdown={"relevance": 0, "quality": 0, "field_importance": 0},
               why="", scored_at=datetime(2026, 4, 24, tzinfo=timezone.utc)),
     ])
-    ids = [p.arxiv_id for p in store.bridging_candidates()]
+    ids = [p.arxiv_id for p in store.bridging_candidates(score_min=3.0, score_max=6.0)]
     assert set(ids) == {"2604.00002", "2604.00003"}
 
 

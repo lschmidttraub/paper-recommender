@@ -20,6 +20,9 @@ def test_settings_from_env_applies_defaults(monkeypatch, tmp_path):
     assert s.batch_size == 20
     assert s.max_tokens_per_batch == 4000
     assert s.min_scoring_success_rate == 0.5
+    assert s.hot_surprise_score_max == 5.0
+    assert s.bridging_score_min == 3.0
+    assert s.bridging_score_max == 6.0
     assert s.db_path == tmp_path / "data" / "papers.sqlite"
     assert s.memory_md == tmp_path / "MEMORY.md"
 
