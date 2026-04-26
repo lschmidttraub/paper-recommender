@@ -88,6 +88,16 @@ def run_pipeline(
         )
         store.save_scores(scores)
 
+        papers_to_score = len(needing)
+        scoring_rate = (len(scores) / papers_to_score) if papers_to_score > 0 else 1.0
+        degraded = papers_to_score > 0 and scoring_rate < settings.min_scoring_success_rate
+        if degraded:
+            log.warning(
+                "Run degraded: only %d of %d papers scored (%.1f%% < threshold %.0f%%)",
+                len(scores), papers_to_score,
+                scoring_rate * 100, settings.min_scoring_success_rate * 100,
+            )
+
         digest_date = force_date or datetime.now(timezone.utc).date().isoformat()
         top = store.papers_for_digest(
             threshold=settings.on_interest_threshold,
@@ -132,9 +142,12 @@ def run_pipeline(
                 entries.append(DigestEntry(digest_date, hot_item.paper.arxiv_id, "surprise_hot", 1))
             if bridging_item is not None:
                 entries.append(DigestEntry(digest_date, bridging_item.paper.arxiv_id, "surprise_bridge", 1))
-            store.mark_sent(entries)
+            if not degraded:
+                store.mark_sent(entries)
+            else:
+                log.warning("Skipping mark_sent because run is degraded")
 
-            if not no_email:
+            if not no_email and not degraded:
                 subj = (
                     f"ML digest — {digest_date} · "
                     f"{len(on_interest)}+{int(hot_item is not None) + int(bridging_item is not None)} papers"
@@ -146,10 +159,13 @@ def run_pipeline(
                     from_addr=settings.email_from,
                     smtp_password=settings.smtp_password,
                 )
+            elif degraded:
+                log.warning("Skipping email send because run is degraded")
 
+        final_status = "degraded" if degraded else "ok"
         store.record_run(
             run_id,
-            status="ok",
+            status=final_status,
             papers_seen=len(all_papers),
             papers_scored=len(scores),
             digest_date=digest_date,

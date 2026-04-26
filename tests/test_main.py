@@ -30,6 +30,7 @@ def settings(tmp_path):
         bridging_model="anthropic/claude-haiku-4-5",
         batch_size=20,
         max_tokens_per_batch=4000,
+        min_scoring_success_rate=0.5,
         arxiv_categories=("cs.LG",),
         arxiv_max_backfill_days=7,
         on_interest_min=1,
@@ -131,6 +132,52 @@ def test_email_only_raises_if_digest_missing(settings, mocker):
     import pytest as _pytest
     with _pytest.raises(FileNotFoundError):
         run_pipeline(settings, force_date="2099-01-01", email_only=True)
+
+
+def test_run_pipeline_marks_degraded_when_scoring_rate_low(settings, mocker):
+    # 4 papers needing scoring; only 1 succeeds → 25% < 50% threshold
+    papers = [_paper(f"2604.{i:05d}") for i in range(1, 5)]
+    mocker.patch("recommender.main.arxiv.fetch", return_value=papers)
+    mocker.patch("recommender.main.hf.fetch", return_value=[])
+    mocker.patch("recommender.main.evaluate.score_papers", return_value=[
+        Score(arxiv_id="2604.00001", run_id=1, model="m", score=9.0,
+              breakdown={"relevance": 9, "quality": 9, "field_importance": 9},
+              why="", scored_at=datetime(2026, 4, 24, tzinfo=timezone.utc)),
+    ])
+    mocker.patch("recommender.main.surprise.pick_hot_outside_field", return_value=None)
+    mocker.patch("recommender.main.surprise.pick_bridging", return_value=None)
+    mail_mock = mocker.patch("recommender.main.mail.send")
+
+    run_pipeline(settings, force_date="2026-04-26")
+
+    mail_mock.assert_not_called()
+    from recommender.store import Store
+    store = Store(settings.db_path)
+    with store.connect() as conn:
+        row = conn.execute("SELECT status FROM runs ORDER BY run_id DESC LIMIT 1").fetchone()
+    assert row["status"] == "degraded"
+    # No digest entries should be marked (so papers can resurface tomorrow)
+    with store.connect() as conn:
+        n = conn.execute("SELECT COUNT(*) FROM digest_entries").fetchone()[0]
+    assert n == 0
+
+
+def test_run_pipeline_remains_ok_when_no_papers_to_score(settings, mocker):
+    """If there's no work to do (papers_to_score=0), do not mark as degraded."""
+    mocker.patch("recommender.main.arxiv.fetch", return_value=[])
+    mocker.patch("recommender.main.hf.fetch", return_value=[])
+    mocker.patch("recommender.main.evaluate.score_papers", return_value=[])
+    mocker.patch("recommender.main.surprise.pick_hot_outside_field", return_value=None)
+    mocker.patch("recommender.main.surprise.pick_bridging", return_value=None)
+    mocker.patch("recommender.main.mail.send")
+
+    run_pipeline(settings, force_date="2026-04-26")
+
+    from recommender.store import Store
+    store = Store(settings.db_path)
+    with store.connect() as conn:
+        row = conn.execute("SELECT status FROM runs ORDER BY run_id DESC LIMIT 1").fetchone()
+    assert row["status"] == "ok"
 
 
 def test_cli_parses_email_only_flag(mocker, tmp_path, monkeypatch):
