@@ -197,20 +197,46 @@ class Store:
         Includes papers with score >= threshold. If fewer than min_count qualify,
         fills up to min_count with the next-highest scoring papers. Always
         excludes papers that already appear in any past digest_entries row.
+
+        Deprecated: use papers_for_digest() instead.
+        """
+        return self.papers_for_digest(
+            threshold=threshold, min_count=min_count, max_count=max_count
+        )
+
+    def papers_for_digest(
+        self,
+        *,
+        threshold: float,
+        min_count: int,
+        max_count: int,
+    ) -> list[Paper]:
+        """Pick the best unspent papers using the latest score per paper.
+
+        A paper is "unspent" if it does not appear in digest_entries.
+        Includes papers with latest score >= threshold. If fewer than
+        min_count qualify, fills up to min_count with the next-highest
+        scoring papers. Returns up to max_count papers, ordered by score
+        descending.
         """
         with self.connect() as conn:
             rows = conn.execute(
-                """SELECT p.*, s.score
+                """WITH latest AS (
+                       SELECT s.arxiv_id, s.score
+                       FROM scores s
+                       WHERE s.run_id = (
+                           SELECT MAX(run_id) FROM scores s2
+                           WHERE s2.arxiv_id = s.arxiv_id
+                       )
+                   )
+                   SELECT p.*, latest.score
                    FROM papers p
-                   JOIN scores s ON s.arxiv_id = p.arxiv_id
-                   WHERE s.run_id = ?
-                     AND NOT EXISTS (
+                   JOIN latest ON latest.arxiv_id = p.arxiv_id
+                   WHERE NOT EXISTS (
                        SELECT 1 FROM digest_entries d WHERE d.arxiv_id = p.arxiv_id
-                     )
-                   ORDER BY s.score DESC""",
-                (run_id,),
+                   )
+                   ORDER BY latest.score DESC"""
             ).fetchall()
-
         ranked = [(r, r["score"]) for r in rows]
         above = [r for r, sc in ranked if sc >= threshold]
         if len(above) >= min_count:
@@ -231,47 +257,78 @@ class Store:
     def score_and_justification(
         self, arxiv_id: str, run_id: int
     ) -> tuple[float, dict] | None:
-        """Return (score, justification_payload) for a paper in a run, or None."""
+        """Return (score, justification_payload) for a paper in a run, or None.
+
+        Deprecated: use latest_score_and_justification() instead.
+        """
+        return self.latest_score_and_justification(arxiv_id)
+
+    def latest_score_and_justification(
+        self, arxiv_id: str
+    ) -> tuple[float, dict] | None:
+        """Return (score, justification_payload) for the most recent run that scored this paper, or None."""
         with self.connect() as conn:
             row = conn.execute(
-                "SELECT score, justification FROM scores WHERE arxiv_id = ? AND run_id = ?",
-                (arxiv_id, run_id),
+                """SELECT score, justification
+                   FROM scores
+                   WHERE arxiv_id = ?
+                   ORDER BY run_id DESC
+                   LIMIT 1""",
+                (arxiv_id,),
             ).fetchone()
         if row is None:
             return None
         return row["score"], json.loads(row["justification"])
 
     def hot_outside_field_pick(
-        self, *, run_id: int, upvote_threshold: int
+        self, *, run_id: int | None = None, upvote_threshold: int
     ) -> Paper | None:
-        """Highest-upvoted HF paper from this run that scored <5 and is not yet digested."""
+        """Highest-upvoted HF paper whose latest score is <5 and that is not yet digested."""
         with self.connect() as conn:
             row = conn.execute(
-                """SELECT p.*
+                """WITH latest AS (
+                       SELECT s.arxiv_id, s.score
+                       FROM scores s
+                       WHERE s.run_id = (
+                           SELECT MAX(run_id) FROM scores s2
+                           WHERE s2.arxiv_id = s.arxiv_id
+                       )
+                   )
+                   SELECT p.*
                    FROM papers p
-                   JOIN scores s ON s.arxiv_id = p.arxiv_id
-                   WHERE s.run_id = ?
-                     AND p.hf_upvotes IS NOT NULL
+                   JOIN latest ON latest.arxiv_id = p.arxiv_id
+                   WHERE p.hf_upvotes IS NOT NULL
                      AND p.hf_upvotes >= ?
-                     AND s.score < 5
+                     AND latest.score < 5
                      AND EXISTS (SELECT 1 FROM json_each(p.sources) WHERE value = 'hf')
-                     AND NOT EXISTS (SELECT 1 FROM digest_entries d WHERE d.arxiv_id = p.arxiv_id)
+                     AND NOT EXISTS (
+                         SELECT 1 FROM digest_entries d WHERE d.arxiv_id = p.arxiv_id
+                     )
                    ORDER BY p.hf_upvotes DESC
                    LIMIT 1""",
-                (run_id, upvote_threshold),
+                (upvote_threshold,),
             ).fetchone()
         return self._row_to_paper(row) if row else None
 
-    def bridging_candidates(self, run_id: int) -> list[Paper]:
-        """Papers scored in [3, 6] that are not yet digested."""
+    def bridging_candidates(self, run_id: int | None = None) -> list[Paper]:
+        """Papers whose latest score is in [3, 6] and that are not yet digested."""
         with self.connect() as conn:
             rows = conn.execute(
-                """SELECT p.* FROM papers p
-                   JOIN scores s ON s.arxiv_id = p.arxiv_id
-                   WHERE s.run_id = ?
-                     AND s.score >= 3 AND s.score <= 6
-                     AND NOT EXISTS (SELECT 1 FROM digest_entries d WHERE d.arxiv_id = p.arxiv_id)""",
-                (run_id,),
+                """WITH latest AS (
+                       SELECT s.arxiv_id, s.score
+                       FROM scores s
+                       WHERE s.run_id = (
+                           SELECT MAX(run_id) FROM scores s2
+                           WHERE s2.arxiv_id = s.arxiv_id
+                       )
+                   )
+                   SELECT p.*
+                   FROM papers p
+                   JOIN latest ON latest.arxiv_id = p.arxiv_id
+                   WHERE latest.score >= 3 AND latest.score <= 6
+                     AND NOT EXISTS (
+                         SELECT 1 FROM digest_entries d WHERE d.arxiv_id = p.arxiv_id
+                     )"""
             ).fetchall()
         return [self._row_to_paper(r) for r in rows]
 

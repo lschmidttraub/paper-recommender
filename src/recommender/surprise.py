@@ -14,24 +14,22 @@ log = logging.getLogger(__name__)
 def pick_hot_outside_field(
     store: Store,
     *,
-    run_id: int,
     upvote_threshold: int,
 ) -> Paper | None:
-    """Highest-upvoted HF paper from this run that scored <5 and is not yet digested."""
-    return store.hot_outside_field_pick(run_id=run_id, upvote_threshold=upvote_threshold)
+    """Highest-upvoted HF paper whose latest score is <5 and is not yet digested."""
+    return store.hot_outside_field_pick(upvote_threshold=upvote_threshold)
 
 
 def pick_bridging(
     store: Store,
     *,
-    run_id: int,
     primary: str,
     model: str,
     min_candidates: int = 10,
     sample_size: int = 30,
 ) -> tuple[Paper, str] | None:
     """LLM-picked tangential paper with a bridging reason."""
-    candidates = store.bridging_candidates(run_id)
+    candidates = store.bridging_candidates()
     if len(candidates) < min_candidates:
         log.info("Bridging skipped: %d candidates < %d", len(candidates), min_candidates)
         return None
@@ -65,7 +63,6 @@ def pick_bridging(
                 {"role": "system", "content": "Return only JSON."},
                 {"role": "user", "content": user_msg},
             ],
-            max_tokens=1500,
         )
     except Exception as e:
         log.warning("Bridging LLM call failed: %s", e)

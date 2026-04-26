@@ -88,8 +88,7 @@ def run_pipeline(
         store.save_scores(scores)
 
         digest_date = force_date or datetime.now(timezone.utc).date().isoformat()
-        top = store.top_scoring_today(
-            run_id,
+        top = store.papers_for_digest(
             threshold=settings.on_interest_threshold,
             min_count=settings.on_interest_min,
             max_count=settings.on_interest_max,
@@ -98,12 +97,12 @@ def run_pipeline(
             _on_interest_item(store, p, run_id) for p in top
         ]
         hot = surprise.pick_hot_outside_field(
-            store, run_id=run_id,
+            store,
             upvote_threshold=settings.hf_upvote_threshold_for_hot_surprise,
         )
         hot_item = _hot_item(store, hot, run_id) if hot else None
         bridging_pair = surprise.pick_bridging(
-            store, run_id=run_id, primary=primary,
+            store, primary=primary,
             model=settings.bridging_model,
         )
         bridging_item = (
@@ -161,7 +160,7 @@ def run_pipeline(
 
 
 def _on_interest_item(store: Store, paper, run_id: int) -> OnInterestItem:
-    result = store.score_and_justification(paper.arxiv_id, run_id)
+    result = store.latest_score_and_justification(paper.arxiv_id)
     if result is None:
         return OnInterestItem(paper=paper, score=0.0, why="",
                               breakdown={"relevance": 0, "quality": 0, "field_importance": 0})
@@ -175,6 +174,6 @@ def _on_interest_item(store: Store, paper, run_id: int) -> OnInterestItem:
 
 
 def _hot_item(store: Store, paper, run_id: int) -> HotOutsideItem:
-    result = store.score_and_justification(paper.arxiv_id, run_id)
+    result = store.latest_score_and_justification(paper.arxiv_id)
     score = result[0] if result else 0.0
     return HotOutsideItem(paper=paper, score=score)

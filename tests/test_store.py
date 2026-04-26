@@ -142,7 +142,7 @@ def test_record_run_finalizes_status(store: Store):
     assert row["papers_seen"] == 3
 
 
-def test_top_scoring_respects_threshold_and_bounds(store: Store):
+def test_papers_for_digest_respects_threshold_and_bounds(store: Store):
     store.init_db()
     store.upsert_papers([_paper(f"2604.{i:05d}") for i in range(1, 11)])
     run_id = store.start_run()
@@ -160,14 +160,14 @@ def test_top_scoring_respects_threshold_and_bounds(store: Store):
             )
         )
     store.save_scores(scores)
-    picks = store.top_scoring_today(run_id, threshold=7.0, min_count=5, max_count=15)
+    picks = store.papers_for_digest(threshold=7.0, min_count=5, max_count=15)
     # papers with score >= 7 are ids 7..10 (4 papers), floor of 5 forces including id 6 as well
     assert [p.arxiv_id for p in picks] == [
         "2604.00010", "2604.00009", "2604.00008", "2604.00007", "2604.00006",
     ]
 
 
-def test_top_scoring_excludes_already_digested(store: Store):
+def test_papers_for_digest_excludes_already_digested(store: Store):
     store.init_db()
     store.upsert_papers([_paper(f"2604.{i:05d}") for i in range(1, 4)])
     run_id = store.start_run()
@@ -184,7 +184,7 @@ def test_top_scoring_excludes_already_digested(store: Store):
         DigestEntry(digest_date="2026-04-23", arxiv_id="2604.00001",
                     section="on_interest", rank=1),
     ])
-    picks = store.top_scoring_today(run_id, threshold=7.0, min_count=1, max_count=10)
+    picks = store.papers_for_digest(threshold=7.0, min_count=1, max_count=10)
     ids = [p.arxiv_id for p in picks]
     assert "2604.00001" not in ids
     assert {"2604.00002", "2604.00003"} <= set(ids)
@@ -215,7 +215,7 @@ def test_last_successful_finished_at_returns_latest_ok_run(store: Store):
     assert got.tzinfo is not None
 
 
-def test_score_and_justification_roundtrip(store: Store):
+def test_latest_score_and_justification_roundtrip(store: Store):
     store.init_db()
     store.upsert_papers([_paper("2604.00001")])
     rid = store.start_run()
@@ -226,7 +226,7 @@ def test_score_and_justification_roundtrip(store: Store):
             why="neat", scored_at=datetime(2026, 4, 24, tzinfo=timezone.utc),
         ),
     ])
-    got = store.score_and_justification("2604.00001", rid)
+    got = store.latest_score_and_justification("2604.00001")
     assert got is not None
     score, payload = got
     assert score == 7.5
@@ -234,9 +234,9 @@ def test_score_and_justification_roundtrip(store: Store):
     assert payload["why"] == "neat"
 
 
-def test_score_and_justification_returns_none_for_missing(store: Store):
+def test_latest_score_and_justification_returns_none_for_missing(store: Store):
     store.init_db()
-    assert store.score_and_justification("nope", 1) is None
+    assert store.latest_score_and_justification("nope") is None
 
 
 def test_hot_outside_field_pick_respects_filters(store: Store):
@@ -254,7 +254,7 @@ def test_hot_outside_field_pick_respects_filters(store: Store):
               breakdown={"relevance": 0, "quality": 0, "field_importance": 0},
               why="", scored_at=datetime(2026, 4, 24, tzinfo=timezone.utc)),
     ])
-    pick = store.hot_outside_field_pick(run_id=rid, upvote_threshold=10)
+    pick = store.hot_outside_field_pick(upvote_threshold=10)
     assert pick is not None and pick.arxiv_id == "2604.00001"
 
 
@@ -276,5 +276,50 @@ def test_bridging_candidates_returns_papers_in_score_band(store: Store):
               breakdown={"relevance": 0, "quality": 0, "field_importance": 0},
               why="", scored_at=datetime(2026, 4, 24, tzinfo=timezone.utc)),
     ])
-    ids = [p.arxiv_id for p in store.bridging_candidates(rid)]
+    ids = [p.arxiv_id for p in store.bridging_candidates()]
     assert set(ids) == {"2604.00002", "2604.00003"}
+
+
+def test_papers_for_digest_includes_papers_scored_in_prior_runs(store: Store):
+    """Regression: papers scored on a prior run but not yet digested should
+    surface in subsequent digests, not just runs where they were freshly scored."""
+    store.init_db()
+    store.upsert_papers([_paper("2604.00001"), _paper("2604.00002")])
+    # Score on run 1
+    run_id_1 = store.start_run()
+    store.save_scores([
+        Score(arxiv_id="2604.00001", run_id=run_id_1, model="m", score=9.0,
+              breakdown={"relevance": 9, "quality": 9, "field_importance": 9},
+              why="great", scored_at=datetime(2026, 4, 24, tzinfo=timezone.utc)),
+        Score(arxiv_id="2604.00002", run_id=run_id_1, model="m", score=8.0,
+              breakdown={"relevance": 8, "quality": 8, "field_importance": 8},
+              why="good", scored_at=datetime(2026, 4, 24, tzinfo=timezone.utc)),
+    ])
+    # New run starts (run 2), no new scores written
+    _run_id_2 = store.start_run()
+    picks = store.papers_for_digest(threshold=7.0, min_count=1, max_count=10)
+    assert {p.arxiv_id for p in picks} == {"2604.00001", "2604.00002"}
+    assert picks[0].arxiv_id == "2604.00001"  # higher score first
+
+
+def test_latest_score_and_justification_returns_most_recent_run(store: Store):
+    """If a paper was scored in multiple runs, return the latest one."""
+    store.init_db()
+    store.upsert_papers([_paper("2604.00001")])
+    r1 = store.start_run()
+    store.save_scores([Score(
+        arxiv_id="2604.00001", run_id=r1, model="m", score=5.0,
+        breakdown={"relevance": 5, "quality": 5, "field_importance": 5},
+        why="initial", scored_at=datetime(2026, 4, 24, tzinfo=timezone.utc),
+    )])
+    r2 = store.start_run()
+    store.save_scores([Score(
+        arxiv_id="2604.00001", run_id=r2, model="m", score=8.5,
+        breakdown={"relevance": 9, "quality": 8, "field_importance": 9},
+        why="reconsidered", scored_at=datetime(2026, 4, 25, tzinfo=timezone.utc),
+    )])
+    got = store.latest_score_and_justification("2604.00001")
+    assert got is not None
+    score, payload = got
+    assert score == 8.5
+    assert payload["why"] == "reconsidered"
