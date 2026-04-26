@@ -29,6 +29,7 @@ def settings(tmp_path):
         scoring_model="anthropic/claude-haiku-4-5",
         bridging_model="anthropic/claude-haiku-4-5",
         batch_size=20,
+        max_tokens_per_batch=4000,
         arxiv_categories=("cs.LG",),
         arxiv_max_backfill_days=7,
         on_interest_min=1,

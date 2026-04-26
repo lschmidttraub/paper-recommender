@@ -84,6 +84,7 @@ def run_pipeline(
             run_id=run_id,
             model=settings.scoring_model,
             batch_size=settings.batch_size,
+            max_tokens=settings.max_tokens_per_batch,
         )
         store.save_scores(scores)
 

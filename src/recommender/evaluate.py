@@ -73,6 +73,7 @@ def score_papers(
     run_id: int,
     model: str,
     batch_size: int = 20,
+    max_tokens: int = 4000,
 ) -> list[Score]:
     prefix = build_cacheable_prefix(primary, secondary)
     results: list[Score] = []
@@ -86,8 +87,8 @@ def score_papers(
         ]
         try:
             raw = complete_json_array(
-                model=model, messages=messages, cacheable_prefix=prefix, max_retries=1,
-                max_tokens=8000,
+                model=model, messages=messages, cacheable_prefix=prefix,
+                max_retries=1, max_tokens=max_tokens,
             )
         except Exception as e:
             log.warning("Scoring batch %d-%d failed: %s", start, start + len(batch), e)

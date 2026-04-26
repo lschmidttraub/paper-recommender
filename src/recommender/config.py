@@ -29,6 +29,7 @@ class Settings:
     scoring_model: str
     bridging_model: str
     batch_size: int
+    max_tokens_per_batch: int
 
     arxiv_categories: tuple[str, ...]
     arxiv_max_backfill_days: int
@@ -58,6 +59,7 @@ class Settings:
             scoring_model=os.getenv("SCORING_MODEL", "openrouter/anthropic/claude-haiku-4-5"),
             bridging_model=os.getenv("BRIDGING_MODEL", "openrouter/anthropic/claude-haiku-4-5"),
             batch_size=_int("BATCH_SIZE", 20),
+            max_tokens_per_batch=_int("MAX_TOKENS_PER_BATCH", 4000),
             arxiv_categories=tuple(
                 os.getenv("ARXIV_CATEGORIES", "cs.LG,cs.AI,cs.CV,cs.CL,stat.ML").split(",")
             ),

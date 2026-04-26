@@ -71,6 +71,18 @@ def test_score_papers_batches_of_batch_size(mocker):
     assert s1.why == "reason"
 
 
+def test_score_papers_passes_max_tokens_to_llm(mocker):
+    mock = mocker.patch("recommender.evaluate.complete_json_array")
+    mock.return_value = []
+    score_papers(
+        [_paper("2604.00001")],
+        primary="P", secondary="", run_id=1,
+        model="anthropic/claude-haiku-4-5", batch_size=20, max_tokens=2500,
+    )
+    _args, kwargs = mock.call_args
+    assert kwargs["max_tokens"] == 2500
+
+
 def test_score_papers_skips_papers_whose_batch_fails(mocker):
     mock = mocker.patch("recommender.evaluate.complete_json_array")
     mock.side_effect = [ValueError("parse fail"), [
