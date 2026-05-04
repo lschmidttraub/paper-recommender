@@ -1,14 +1,49 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
+
+from recommender.sources.zotero import fetch_items, format_library
+
+log = logging.getLogger(__name__)
 
 _RELEVANT_PREFIXES = ("MEMORY.md", "project_", "user_", "feedback_", "reference_")
 
 
-def load(memory_md: Path, claude_projects_root: Path) -> tuple[str, str]:
+def load(
+    memory_md: Path,
+    claude_projects_root: Path,
+    *,
+    zotero_api_key: str | None = None,
+    zotero_user_id: str | None = None,
+) -> tuple[str, str]:
     primary = memory_md.read_text() if memory_md.exists() else ""
+    primary = _augment_with_zotero(primary, zotero_api_key, zotero_user_id)
     secondary = _scan_claude_memory(claude_projects_root)
     return primary, secondary
+
+
+def _augment_with_zotero(
+    primary: str,
+    api_key: str | None,
+    user_id: str | None,
+) -> str:
+    if not (api_key and user_id):
+        return primary
+    try:
+        items = fetch_items(api_key=api_key, user_id=user_id)
+    except Exception as e:
+        log.warning("Zotero fetch failed; continuing without library signal: %s", e)
+        return primary
+    if not items:
+        return primary
+    rendered = format_library(items)
+    section = (
+        "\n\n## Your Zotero library\n\n"
+        "(Items the user has actively saved — strong signal of interests.)\n\n"
+        f"{rendered}\n"
+    )
+    return primary + section
 
 
 def _scan_claude_memory(root: Path) -> str:

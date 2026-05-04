@@ -1,0 +1,31 @@
+[
+  {
+    "key": "ABC123",
+    "data": {
+      "key": "ABC123",
+      "itemType": "journalArticle",
+      "title": "Sparse Autoencoders Find Highly Interpretable Features",
+      "creators": [
+        {"creatorType": "author", "firstName": "Hoagy", "lastName": "Cunningham"},
+        {"creatorType": "author", "firstName": "Aidan", "lastName": "Ewart"}
+      ],
+      "date": "2023-09-15",
+      "tags": [{"tag": "interpretability"}, {"tag": "SAE"}],
+      "dateAdded": "2024-01-12T10:00:00Z"
+    }
+  },
+  {
+    "key": "DEF456",
+    "data": {
+      "key": "DEF456",
+      "itemType": "preprint",
+      "title": "Scaling Laws for Neural Language Models",
+      "creators": [
+        {"creatorType": "author", "firstName": "Jared", "lastName": "Kaplan"}
+      ],
+      "date": "2020",
+      "tags": [{"tag": "scaling"}],
+      "dateAdded": "2023-06-01T08:00:00Z"
+    }
+  }
+]

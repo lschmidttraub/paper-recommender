@@ -76,6 +76,8 @@ def run_pipeline(
         primary, secondary = interests.load(
             memory_md=settings.memory_md,
             claude_projects_root=settings.claude_projects_root,
+            zotero_api_key=settings.zotero_api_key,
+            zotero_user_id=settings.zotero_user_id,
         )
         scores = evaluate.score_papers(
             needing,

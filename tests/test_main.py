@@ -43,6 +43,8 @@ def settings(tmp_path):
         email_to="to@example.com",
         email_from="from@example.com",
         smtp_password="pw",
+        zotero_api_key=None,
+        zotero_user_id=None,
         db_path=tmp_path / "data" / "t.sqlite",
         digests_dir=tmp_path / "digests",
         logs_dir=tmp_path / "logs",

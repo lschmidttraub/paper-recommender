@@ -42,3 +42,25 @@ def test_settings_raises_without_required_env(monkeypatch, tmp_path):
     monkeypatch.delenv("EMAIL_TO", raising=False)
     with pytest.raises(RuntimeError):
         Settings.from_env(project_root=tmp_path)
+
+
+def test_settings_zotero_optional(monkeypatch, tmp_path):
+    monkeypatch.setenv("EMAIL_TO", "leo@example.com")
+    monkeypatch.setenv("EMAIL_FROM", "leo@example.com")
+    monkeypatch.setenv("GMAIL_APP_PASSWORD", "secret")
+    monkeypatch.delenv("ZOTERO_API_KEY", raising=False)
+    monkeypatch.delenv("ZOTERO_USER_ID", raising=False)
+    s = Settings.from_env(project_root=tmp_path)
+    assert s.zotero_api_key is None
+    assert s.zotero_user_id is None
+
+
+def test_settings_zotero_when_set(monkeypatch, tmp_path):
+    monkeypatch.setenv("EMAIL_TO", "leo@example.com")
+    monkeypatch.setenv("EMAIL_FROM", "leo@example.com")
+    monkeypatch.setenv("GMAIL_APP_PASSWORD", "secret")
+    monkeypatch.setenv("ZOTERO_API_KEY", "abc")
+    monkeypatch.setenv("ZOTERO_USER_ID", "12345")
+    s = Settings.from_env(project_root=tmp_path)
+    assert s.zotero_api_key == "abc"
+    assert s.zotero_user_id == "12345"

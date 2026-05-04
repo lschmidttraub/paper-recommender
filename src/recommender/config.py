@@ -46,6 +46,8 @@ class Settings:
     email_to: str
     email_from: str
     smtp_password: str
+    zotero_api_key: str | None
+    zotero_user_id: str | None
 
     db_path: Path
     digests_dir: Path
@@ -79,6 +81,8 @@ class Settings:
             email_to=_require("EMAIL_TO"),
             email_from=_require("EMAIL_FROM"),
             smtp_password=_require("GMAIL_APP_PASSWORD"),
+            zotero_api_key=os.getenv("ZOTERO_API_KEY") or None,
+            zotero_user_id=os.getenv("ZOTERO_USER_ID") or None,
             db_path=project_root / "data" / "papers.sqlite",
             digests_dir=project_root / "digests",
             logs_dir=project_root / "logs",
