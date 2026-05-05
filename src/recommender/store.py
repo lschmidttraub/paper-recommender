@@ -341,6 +341,15 @@ class Store:
             ).fetchall()
         return [self._row_to_paper(r) for r in rows]
 
+    def already_digested_for_date(self, digest_date: str) -> bool:
+        """True if any digest_entries row exists for the given date."""
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM digest_entries WHERE digest_date = ? LIMIT 1",
+                (digest_date,),
+            ).fetchone()
+        return row is not None
+
     def mark_sent(self, entries: Iterable[DigestEntry]) -> None:
         with self.connect() as conn:
             for e in entries:

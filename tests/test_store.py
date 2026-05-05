@@ -323,3 +323,15 @@ def test_latest_score_and_justification_returns_most_recent_run(store: Store):
     score, payload = got
     assert score == 8.5
     assert payload["why"] == "reconsidered"
+
+
+def test_already_digested_for_date_reflects_entries(store: Store):
+    store.init_db()
+    assert store.already_digested_for_date("2026-05-05") is False
+    store.upsert_papers([_paper("2604.00001")])
+    store.mark_sent([
+        DigestEntry(digest_date="2026-05-05", arxiv_id="2604.00001",
+                    section="on_interest", rank=1),
+    ])
+    assert store.already_digested_for_date("2026-05-05") is True
+    assert store.already_digested_for_date("2026-05-06") is False

@@ -199,3 +199,83 @@ def test_cli_parses_email_only_flag(mocker, tmp_path, monkeypatch):
     run_mock.assert_called_once()
     _args, kwargs = run_mock.call_args
     assert kwargs["email_only"] is True
+
+
+def test_force_date_bypasses_already_shipped_guard(settings, mocker):
+    """--force-date is the user's 'I know what I'm doing, re-ship' signal."""
+    from recommender.models import DigestEntry as _DE
+    from recommender.store import Store as _Store
+
+    _store = _Store(settings.db_path)
+    _store.init_db()
+    _store.mark_sent([_DE("2026-05-05", "2604.00001", "on_interest", 1)])
+
+    mocker.patch("recommender.main.arxiv.fetch", return_value=[_paper("2604.99999")])
+    mocker.patch("recommender.main.hf.fetch", return_value=[])
+    mocker.patch("recommender.main.evaluate.score_papers", return_value=[
+        Score(
+            arxiv_id="2604.99999", run_id=1, model="m", score=9.0,
+            breakdown={"relevance": 9, "quality": 9, "field_importance": 9},
+            why="r", scored_at=datetime(2026, 5, 5, tzinfo=timezone.utc),
+        ),
+    ])
+    mocker.patch("recommender.main.surprise.pick_hot_outside_field", return_value=None)
+    mocker.patch("recommender.main.surprise.pick_bridging", return_value=None)
+    mail_mock = mocker.patch("recommender.main.mail.send")
+
+    run_pipeline(settings, force_date="2026-05-05")
+
+    mail_mock.assert_called_once()
+
+
+def test_run_pipeline_skips_when_already_shipped_and_no_force_date(settings, mocker):
+    """Without --force-date, an already-shipped date is a no-op for mark_sent + email."""
+    from recommender.models import DigestEntry as _DE
+    from recommender.store import Store as _Store
+
+    _store = _Store(settings.db_path)
+    _store.init_db()
+
+    # Set "today" via a frozen date — actually, simpler: pre-populate today's date
+    # using the same date the pipeline will compute (UTC today).
+    today_iso = datetime.now(timezone.utc).date().isoformat()
+    _store.mark_sent([_DE(today_iso, "2604.00001", "on_interest", 1)])
+
+    mocker.patch("recommender.main.arxiv.fetch", return_value=[_paper("2604.99999")])
+    mocker.patch("recommender.main.hf.fetch", return_value=[])
+    mocker.patch("recommender.main.evaluate.score_papers", return_value=[
+        Score(
+            arxiv_id="2604.99999", run_id=1, model="m", score=9.0,
+            breakdown={"relevance": 9, "quality": 9, "field_importance": 9},
+            why="r", scored_at=datetime.now(timezone.utc),
+        ),
+    ])
+    mocker.patch("recommender.main.surprise.pick_hot_outside_field", return_value=None)
+    mocker.patch("recommender.main.surprise.pick_bridging", return_value=None)
+    mail_mock = mocker.patch("recommender.main.mail.send")
+
+    run_pipeline(settings)  # No force_date.
+
+    mail_mock.assert_not_called()
+
+
+def test_run_pipeline_skipped_when_lock_already_held(settings, mocker):
+    """If the .pipeline.lock is already locked by someone else, exit cleanly."""
+    import fcntl
+
+    settings.db_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = settings.db_path.parent / ".pipeline.lock"
+    other = open(lock_path, "w")
+    fcntl.flock(other.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    arxiv_mock = mocker.patch("recommender.main.arxiv.fetch")
+    mail_mock = mocker.patch("recommender.main.mail.send")
+
+    try:
+        run_pipeline(settings)
+    finally:
+        fcntl.flock(other.fileno(), fcntl.LOCK_UN)
+        other.close()
+
+    arxiv_mock.assert_not_called()
+    mail_mock.assert_not_called()

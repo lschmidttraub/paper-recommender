@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fcntl
 import logging
 import time
 import traceback
@@ -34,7 +35,37 @@ def run_pipeline(
 ) -> None:
     settings.digests_dir.mkdir(parents=True, exist_ok=True)
     settings.logs_dir.mkdir(parents=True, exist_ok=True)
+    settings.db_path.parent.mkdir(parents=True, exist_ok=True)
 
+    lock_path = settings.db_path.parent / ".pipeline.lock"
+    with open(lock_path, "w") as lock_fd:
+        try:
+            fcntl.flock(lock_fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            log.warning("Another pipeline run is already in progress; exiting cleanly.")
+            return
+        try:
+            _run_locked(
+                settings,
+                force_date=force_date,
+                dry_run=dry_run,
+                no_email=no_email,
+                email_only=email_only,
+                backfill_days=backfill_days,
+            )
+        finally:
+            fcntl.flock(lock_fd.fileno(), fcntl.LOCK_UN)
+
+
+def _run_locked(
+    settings: Settings,
+    *,
+    force_date: str | None = None,
+    dry_run: bool = False,
+    no_email: bool = False,
+    email_only: bool = False,
+    backfill_days: int | None = None,
+) -> None:
     if email_only:
         date = force_date or datetime.now(timezone.utc).date().isoformat()
         digest_path = settings.digests_dir / f"{date}.md"
@@ -139,7 +170,14 @@ def run_pipeline(
         digest_path = settings.digests_dir / f"{digest_date}.md"
         digest_path.write_text(md)
 
-        if not dry_run:
+        # Dedup guard: if a digest for this date already shipped (entries exist
+        # for the date), skip mark_sent and email. --force-date overrides.
+        already_shipped = store.already_digested_for_date(digest_date)
+        should_persist_and_send = not dry_run and (
+            force_date is not None or not already_shipped
+        )
+
+        if should_persist_and_send:
             entries: list[DigestEntry] = []
             for rank, item in enumerate(on_interest, start=1):
                 entries.append(DigestEntry(digest_date, item.paper.arxiv_id, "on_interest", rank))
@@ -166,6 +204,12 @@ def run_pipeline(
                 )
             elif degraded:
                 log.warning("Skipping email send because run is degraded")
+        elif already_shipped and not dry_run:
+            log.info(
+                "Digest already shipped for %s; skipping mark_sent and email "
+                "(use --force-date to override)",
+                digest_date,
+            )
 
         final_status = "degraded" if degraded else "ok"
         store.record_run(
