@@ -36,13 +36,45 @@ uv run python -m recommender --force-date 2026-04-24
 uv run python -m recommender --backfill 3
 ```
 
-### Cron
+## Scheduling
 
-Add to your crontab (`crontab -e`):
+### GitHub Actions (recommended)
+
+`.github/workflows/digest.yml` runs the pipeline daily in the cloud, so it does
+not depend on any laptop being awake. Local `cron` silently skips the job
+whenever the machine is suspended or off at the scheduled minute (cronie does
+not run missed jobs on resume), which is the usual reason digests stop arriving.
+
+One-time setup — add the secrets the workflow reads (run from the repo, or set
+them in the GitHub UI under Settings → Secrets and variables → Actions):
+
+```bash
+gh secret set OPENROUTER_API_KEY   # or whichever provider key SCORING_MODEL needs
+gh secret set GMAIL_APP_PASSWORD
+gh secret set EMAIL_TO
+gh secret set EMAIL_FROM
+gh secret set ZOTERO_API_KEY       # optional (primary interest signal)
+gh secret set ZOTERO_USER_ID       # optional
+```
+
+Then trigger a test run from the Actions tab ("Run workflow") or with
+`gh workflow run "Daily digest"`. Notes:
+
+- The schedule is `0 5 * * *` UTC = 07:00 Berlin in summer (06:00 in winter; GitHub cron has no DST).
+- The SQLite DB (scoring cache + dedup state) is persisted via the Actions cache, not committed to the repo.
+- The `~/.claude/projects` secondary interest signal is local-only and absent on the runner; `MEMORY.md` + Zotero remain the primary signal.
+- GitHub disables scheduled workflows after 60 days with no repo activity — push a commit or re-enable if that happens.
+
+### Local cron (laptop-dependent)
+
+Runs only when the machine is awake at the scheduled minute. Add to your crontab (`crontab -e`):
 
 ```cron
 0 7 * * * cd /home/YOU/src/paper-recommender && /usr/bin/env -S uv run python -m recommender >> logs/cron.log 2>&1
 ```
+
+For a laptop, a `systemd` timer with `Persistent=true` is more reliable than cron
+because it runs the missed job on resume instead of skipping it.
 
 ## Tests
 

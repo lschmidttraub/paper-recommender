@@ -1,0 +1,73 @@
+name: Daily digest
+
+on:
+  schedule:
+    # 05:00 UTC == 07:00 Europe/Berlin in summer (CEST), 06:00 in winter (CET).
+    # GitHub cron is always UTC and has no DST; this matches the old 07:00 local cron.
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+    inputs:
+      backfill:
+        description: "Look back N days instead of since-last-run (leave blank for normal run)"
+        required: false
+        default: ""
+
+# Never let two runs overlap (e.g. a manual run during the scheduled one).
+concurrency:
+  group: daily-digest
+  cancel-in-progress: false
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # Persist the SQLite DB (scoring cache, dedup state, backfill window) between
+      # runs. The DB is ~29 MB and grows, so we use the Actions cache rather than
+      # committing it back to the repo. A unique key per run always saves a fresh
+      # copy; restore-keys pulls the most recent prior DB. Worst case on a cache
+      # miss: one run re-scores the last few days of papers (a few cents), no data loss.
+      - name: Restore paper database
+        uses: actions/cache@v4
+        with:
+          path: data/papers.sqlite
+          key: paper-db-${{ github.run_id }}
+          restore-keys: |
+            paper-db-
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8
+        with:
+          python-version: "3.11"
+          enable-cache: true
+
+      - name: Run recommender
+        env:
+          # Required
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          # Optional but recommended (primary interest signal)
+          ZOTERO_API_KEY: ${{ secrets.ZOTERO_API_KEY }}
+          ZOTERO_USER_ID: ${{ secrets.ZOTERO_USER_ID }}
+          BACKFILL: ${{ github.event.inputs.backfill }}
+        run: |
+          ARGS=""
+          if [ -n "$BACKFILL" ]; then ARGS="--backfill $BACKFILL"; fi
+          uv run python -m recommender $ARGS
+
+      # The runner is ephemeral, so surface the generated digest + log as artifacts
+      # for debugging. The email is still the real deliverable.
+      - name: Upload digest and log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ github.run_id }}
+          path: |
+            digests/*.md
+            logs/*.log
+          if-no-files-found: ignore
+          retention-days: 14
